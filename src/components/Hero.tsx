@@ -1,7 +1,7 @@
 
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 const heroImages = [
   {
@@ -21,6 +21,15 @@ const heroImages = [
 const Hero = () => {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
 
+  // Auto-scroll images every 4 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentImageIndex((prevIndex) => (prevIndex + 1) % heroImages.length);
+    }, 4000); // 4 seconds interval for auto-scrolling
+    
+    return () => clearInterval(interval);
+  }, []);
+
   const nextImage = () => {
     setCurrentImageIndex((prevIndex) => (prevIndex + 1) % heroImages.length);
   };
@@ -35,7 +44,7 @@ const Hero = () => {
         <img
           src={heroImages[currentImageIndex].url}
           alt={heroImages[currentImageIndex].alt}
-          className="w-full h-full object-cover"
+          className="w-full h-full object-cover transition-opacity duration-1000"
         />
         <div className="absolute inset-0 bg-black/30"></div>
       </div>

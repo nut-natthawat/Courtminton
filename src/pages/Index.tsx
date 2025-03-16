@@ -1,5 +1,5 @@
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Header from "@/components/Header";
 import Hero from "@/components/Hero";
 import { DatePicker } from "@/components/DatePicker";
@@ -29,6 +29,14 @@ const Index = () => {
   // State for dialog
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedCourt, setSelectedCourt] = useState<Court | null>(null);
+
+  // Update court times when selectedTime changes
+  useEffect(() => {
+    setCourts(courts.map(court => ({
+      ...court,
+      time: `${selectedTime} น.`
+    })));
+  }, [selectedTime]);
 
   const handleCourtClick = (court: Court) => {
     if (court.isAvailable) {

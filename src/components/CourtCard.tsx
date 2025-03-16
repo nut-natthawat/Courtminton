@@ -22,7 +22,7 @@ const CourtCard = ({ id, name, time, isAvailable, onClick }: CourtCardProps) => 
         <div className="badminton-court-lines"></div>
       </div>
       <h3 className="font-semibold text-lg">{name}</h3>
-      <p className="text-sm text-gray-600">เวลา : {time}</p>
+      <p className="text-sm text-gray-600 transition-all duration-300">เวลา : {time}</p>
       <div className="mt-auto pt-4 flex justify-end">
         <span 
           className={cn(
