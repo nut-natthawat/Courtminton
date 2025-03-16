@@ -50,7 +50,7 @@ const Index = () => {
       <Header />
       <Hero />
       
-      <main className="flex-1 bg-court-yellow">
+      <main className="flex-1 bg-court-yellow/50">
         <div className="container mx-auto px-4 py-8">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-lg mx-auto mb-8">
             <DatePicker date={selectedDate} setDate={setSelectedDate} />
