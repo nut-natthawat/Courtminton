@@ -5,7 +5,7 @@ import Hero from "@/components/Hero";
 import { DatePicker } from "@/components/DatePicker";
 import { TimePicker } from "@/components/TimePicker";
 import CourtCard from "@/components/CourtCard";
-import { useToast } from "@/hooks/use-toast";
+import BookingDialog from "@/components/BookingDialog";
 
 interface Court {
   id: number;
@@ -26,12 +26,15 @@ const Index = () => {
     { id: 6, name: "คอร์ทแบด 6", time: "17:30 - 18:30 น.", isAvailable: true },
   ]);
   
-  const { toast } = useToast();
+  // State for dialog
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [selectedCourt, setSelectedCourt] = useState<Court | null>(null);
 
-  const handleBookCourt = (courtId: number) => {
-    setCourts(courts.map(court => 
-      court.id === courtId ? { ...court, isAvailable: false } : court
-    ));
+  const handleCourtClick = (court: Court) => {
+    if (court.isAvailable) {
+      setSelectedCourt(court);
+      setDialogOpen(true);
+    }
   };
 
   return (
@@ -46,7 +49,7 @@ const Index = () => {
             <TimePicker selectedTime={selectedTime} setSelectedTime={setSelectedTime} />
           </div>
           
-          <div className="court-grid">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {courts.map((court) => (
               <CourtCard
                 key={court.id}
@@ -54,12 +57,21 @@ const Index = () => {
                 name={court.name}
                 time={court.time}
                 isAvailable={court.isAvailable}
-                onBookCourt={handleBookCourt}
+                onClick={() => handleCourtClick(court)}
               />
             ))}
           </div>
         </div>
       </main>
+      
+      {selectedCourt && (
+        <BookingDialog
+          open={dialogOpen}
+          onOpenChange={setDialogOpen}
+          courtName={selectedCourt.name}
+          courtTime={selectedCourt.time}
+        />
+      )}
       
       <footer className="bg-court-orange text-white p-4 text-center">
         <p>© {new Date().getFullYear()} Courtminton - University Badminton Court Booking</p>

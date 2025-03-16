@@ -1,37 +1,29 @@
 
 import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
-import { useToast } from "@/hooks/use-toast";
 
 interface CourtCardProps {
   id: number;
   name: string;
   time: string;
   isAvailable: boolean;
-  onBookCourt: (id: number) => void;
+  onClick: () => void;
 }
 
-const CourtCard = ({ id, name, time, isAvailable, onBookCourt }: CourtCardProps) => {
-  const { toast } = useToast();
-  
-  const handleBooking = () => {
-    if (isAvailable) {
-      onBookCourt(id);
-      toast({
-        title: "Court Booked",
-        description: `You have successfully booked ${name} for ${time}`,
-      });
-    }
-  };
-
+const CourtCard = ({ id, name, time, isAvailable, onClick }: CourtCardProps) => {
   return (
-    <div className="bg-white p-4 rounded-lg shadow-md flex flex-col">
+    <div 
+      className={cn(
+        "bg-white p-4 rounded-lg shadow-md flex flex-col cursor-pointer transition-transform hover:scale-105",
+        !isAvailable && "opacity-70"
+      )}
+      onClick={isAvailable ? onClick : undefined}
+    >
       <div className="badminton-court mb-4">
         <div className="badminton-court-lines"></div>
       </div>
       <h3 className="font-semibold text-lg">{name}</h3>
       <p className="text-sm text-gray-600">เวลา : {time}</p>
-      <div className="mt-auto pt-4 flex justify-between items-center">
+      <div className="mt-auto pt-4 flex justify-end">
         <span 
           className={cn(
             "px-3 py-1 rounded-full text-sm font-medium",
@@ -42,18 +34,6 @@ const CourtCard = ({ id, name, time, isAvailable, onBookCourt }: CourtCardProps)
         >
           {isAvailable ? "ว่าง" : "เต็ม"}
         </span>
-        <Button
-          onClick={handleBooking}
-          disabled={!isAvailable}
-          className={cn(
-            "px-4",
-            isAvailable 
-              ? "bg-court-orange hover:bg-court-orange/90 text-white" 
-              : "bg-gray-300 text-gray-500 cursor-not-allowed"
-          )}
-        >
-          {isAvailable ? "จอง" : "เต็มแล้ว"}
-        </Button>
       </div>
     </div>
   );
