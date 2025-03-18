@@ -82,7 +82,7 @@ const Index = () => {
       )}
       
       <footer className="bg-court-orange text-white p-4 text-center">
-        <p>© {new Date().getFullYear()} Courtminton - University Badminton Court Booking</p>
+        <p>© {new Date().getFullYear()} Courtminton - King Mongkut's University of Technology Thonburi</p>
       </footer>
     </div>
   );

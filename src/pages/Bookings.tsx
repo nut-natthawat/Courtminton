@@ -25,15 +25,15 @@ const Bookings = () => {
   return (
     <div className="flex flex-col min-h-screen">
       <Header />
-      <main className="flex-1 bg-court-yellow">
+      <main className="flex-1 bg-court-white">
         <div className="container mx-auto px-4 py-8">
           <h1 className="text-2xl font-bold mb-6">คอร์ทที่จองอยู่</h1>
           
           {bookings.length > 0 ? (
             <div className="grid gap-4">
               {bookings.map((booking) => (
-                <div key={booking.id} className="bg-white p-4 rounded-lg shadow-md flex flex-wrap md:flex-nowrap justify-between items-center">
-                  <div className="mb-4 md:mb-0">
+                <div key={booking.id} className="bg-black/5 p-4 rounded-lg shadow-md flex flex-wrap md:flex-nowrap justify-between items-center">
+                  <div className="mb-4 md:mb-0">  
                     <h3 className="font-semibold text-lg">{booking.courtName}</h3>
                     <p className="text-sm text-gray-600">วันที่: {booking.date}</p>
                     <p className="text-sm text-gray-600">เวลา: {booking.time}</p>
@@ -63,7 +63,7 @@ const Bookings = () => {
       </main>
       
       <footer className="bg-court-orange text-white p-4 text-center">
-        <p>© {new Date().getFullYear()} Courtminton - University Badminton Court Booking</p>
+        <p>© {new Date().getFullYear()} Courtminton - King Mongkut's University of Technology Thonburi</p>
       </footer>
     </div>
   );
