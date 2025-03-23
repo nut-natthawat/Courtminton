@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -13,62 +12,74 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
+import { createBooking } from "@/lib/api";
 
 interface BookingDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   courtName: string;
   courtTime: string;
+  courtNumber: number;
+  bookingDate: string;
 }
 
-const BookingDialog = ({ open, onOpenChange, courtName, courtTime }: BookingDialogProps) => {
-  const [numberOfPeople, setNumberOfPeople] = useState<number>(1);
-  const [studentCodes, setStudentCodes] = useState<string[]>([""]);
+const BookingDialog = ({ 
+  open, 
+  onOpenChange, 
+  courtName, 
+  courtTime, 
+  courtNumber, 
+  bookingDate 
+}: BookingDialogProps) => {
+  const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
   const navigate = useNavigate();
+  const { user, isAuthenticated } = useAuth();
+  
+  // Extract start time and end time from courtTime (format: "HH:MM - HH:MM")
+  const [startTime, endTime] = courtTime.split(" - ").map(t => t.replace(" น.", ""));
 
-  const handleNumberChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = parseInt(e.target.value);
-    if (value > 0 && value <= 4) {
-      setNumberOfPeople(value);
-      // Update student codes array
-      if (value > studentCodes.length) {
-        // Add more student code fields
-        setStudentCodes([...studentCodes, ...Array(value - studentCodes.length).fill("")]);
-      } else if (value < studentCodes.length) {
-        // Remove excess student code fields
-        setStudentCodes(studentCodes.slice(0, value));
-      }
-    }
-  };
-
-  const handleStudentCodeChange = (index: number, value: string) => {
-    const updatedCodes = [...studentCodes];
-    updatedCodes[index] = value;
-    setStudentCodes(updatedCodes);
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    // Validate that all student codes are filled
-    if (studentCodes.some(code => !code.trim())) {
+  const handleBooking = async () => {
+    if (!isAuthenticated) {
       toast({
-        title: "กรุณากรอกรหัสนักศึกษาให้ครบ",
-        description: "กรุณากรอกรหัสนักศึกษาให้ครบทุกคน",
+        title: "กรุณาเข้าสู่ระบบ",
+        description: "คุณจำเป็นต้องเข้าสู่ระบบก่อนจองคอร์ท",
         variant: "destructive",
       });
+      navigate("/login");
       return;
     }
+
+    setIsLoading(true);
     
-    // In a real app, you would save this data
-    toast({
-      title: "จองคอร์ทสำเร็จ",
-      description: `คุณได้จอง ${courtName} เวลา ${courtTime} สำหรับ ${numberOfPeople} คน`,
-    });
-    
-    // Navigate to bookings page
-    navigate("/bookings");
+    try {
+      const bookingData = {
+        courtNumber,
+        bookingDate,
+        startTime,
+        endTime,
+      };
+      
+      await createBooking(user!.token, bookingData);
+      
+      toast({
+        title: "จองคอร์ทสำเร็จ",
+        description: `คุณได้จอง ${courtName} เวลา ${courtTime}`,
+      });
+      
+      // Navigate to bookings page
+      navigate("/bookings");
+    } catch (error) {
+      toast({
+        title: "ไม่สามารถจองคอร์ทได้",
+        description: error instanceof Error ? error.message : "กรุณาลองใหม่อีกครั้ง",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+      onOpenChange(false);
+    }
   };
 
   return (
@@ -80,42 +91,33 @@ const BookingDialog = ({ open, onOpenChange, courtName, courtTime }: BookingDial
             {courtName} เวลา {courtTime}
           </DialogDescription>
         </DialogHeader>
-        <form onSubmit={handleSubmit}>
-          <div className="grid gap-4 py-4">
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="numberOfPeople" className="text-right">
-                จำนวนคน
-              </Label>
-              <Input
-                id="numberOfPeople"
-                type="number"
-                min="1"
-                max="4"
-                value={numberOfPeople}
-                onChange={handleNumberChange}
-                className="col-span-3"
-              />
-            </div>
-            
-            {studentCodes.map((code, index) => (
-              <div key={index} className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor={`studentCode-${index}`} className="text-right">
-                  รหัสนักศึกษา {index + 1}
-                </Label>
-                <Input
-                  id={`studentCode-${index}`}
-                  value={code}
-                  onChange={(e) => handleStudentCodeChange(index, e.target.value)}
-                  className="col-span-3"
-                  placeholder="xxxxxxxxxxxxxx"
-                />
+
+        <div className="grid gap-4 py-4">
+          <div className="flex flex-col space-y-1.5">
+            <Label htmlFor="name">ข้อมูลการจอง</Label>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <p className="text-sm text-muted-foreground">วันที่:</p>
+                <p>{bookingDate}</p>
               </div>
-            ))}
+              <div>
+                <p className="text-sm text-muted-foreground">เวลา:</p>
+                <p>{courtTime}</p>
+              </div>
+            </div>
           </div>
-          <DialogFooter>
-            <Button type="submit" className="bg-court-orange hover:bg-court-orange/90">ยืนยันการจอง</Button>
-          </DialogFooter>
-        </form>
+        </div>
+
+        <DialogFooter>
+          <Button 
+            type="button" 
+            className="bg-court-orange hover:bg-court-orange/90"
+            onClick={handleBooking}
+            disabled={isLoading}
+          >
+            {isLoading ? 'กำลังดำเนินการ...' : 'ยืนยันการจอง'}
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

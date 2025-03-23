@@ -1,14 +1,16 @@
-
 import { useState, useEffect } from "react";
+import { format } from "date-fns";
 import Header from "@/components/Header";
 import Hero from "@/components/Hero";
 import { DatePicker } from "@/components/DatePicker";
 import { TimePicker } from "@/components/TimePicker";
 import CourtCard from "@/components/CourtCard";
 import BookingDialog from "@/components/BookingDialog";
+import { fetchAvailableCourts } from "@/lib/api";
+import { useToast } from "@/hooks/use-toast";
 
 interface Court {
-  id: number;
+  courtNumber: number;
   name: string;
   time: string;
   isAvailable: boolean;
@@ -17,26 +19,58 @@ interface Court {
 const Index = () => {
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date());
   const [selectedTime, setSelectedTime] = useState<string>("17:30 - 18:30");
-  const [courts, setCourts] = useState<Court[]>([
-    { id: 1, name: "คอร์ทแบด 1", time: "17:30 - 18:30 น.", isAvailable: true },
-    { id: 2, name: "คอร์ทแบด 2", time: "17:30 - 18:30 น.", isAvailable: false },
-    { id: 3, name: "คอร์ทแบด 3", time: "17:30 - 18:30 น.", isAvailable: true },
-    { id: 4, name: "คอร์ทแบด 4", time: "17:30 - 18:30 น.", isAvailable: true },
-    { id: 5, name: "คอร์ทแบด 5", time: "17:30 - 18:30 น.", isAvailable: false },
-    { id: 6, name: "คอร์ทแบด 6", time: "17:30 - 18:30 น.", isAvailable: true },
-  ]);
-  
-  // State for dialog
-  const [dialogOpen, setDialogOpen] = useState(false);
+  const [courts, setCourts] = useState<Court[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
   const [selectedCourt, setSelectedCourt] = useState<Court | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const { toast } = useToast();
 
-  // Update court times when selectedTime changes
   useEffect(() => {
-    setCourts(courts.map(court => ({
-      ...court,
-      time: `${selectedTime} น.`
-    })));
-  }, [selectedTime]);
+    if (!selectedDate || !selectedTime) return;
+
+    const loadAvailableCourts = async () => {
+      setIsLoading(true);
+      try {
+        // Split the time range (e.g., "17:30 - 18:30")
+        const [startTime, endTime] = selectedTime.split(" - ");
+        
+        // Format the date as YYYY-MM-DD
+        const formattedDate = format(selectedDate, "yyyy-MM-dd");
+        
+        const response = await fetchAvailableCourts(formattedDate, startTime, endTime);
+        
+        // Transform the API response to match our Court interface
+        const transformedCourts = response.courts.map((court: any) => ({
+          courtNumber: court.courtNumber,
+          name: `คอร์ท ${court.courtNumber}`,
+          time: `${response.startTime} - ${response.endTime}`,
+          isAvailable: court.isAvailable
+        }));
+        
+        setCourts(transformedCourts);
+      } catch (error) {
+        toast({
+          title: 'ไม่สามารถโหลดข้อมูลคอร์ทได้',
+          description: error instanceof Error ? error.message : 'กรุณาลองใหม่อีกครั้ง',
+          variant: 'destructive',
+        });
+        
+        // Fallback to dummy data if API fails
+        setCourts([
+          { courtNumber: 1, name: "คอร์ท 1", time: selectedTime, isAvailable: true },
+          { courtNumber: 2, name: "คอร์ท 2", time: selectedTime, isAvailable: false },
+          { courtNumber: 3, name: "คอร์ท 3", time: selectedTime, isAvailable: true },
+          { courtNumber: 4, name: "คอร์ท 4", time: selectedTime, isAvailable: true },
+          { courtNumber: 5, name: "คอร์ท 5", time: selectedTime, isAvailable: false },
+          { courtNumber: 6, name: "คอร์ท 6", time: selectedTime, isAvailable: true }
+        ]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadAvailableCourts();
+  }, [selectedDate, selectedTime, toast]);
 
   const handleCourtClick = (court: Court) => {
     if (court.isAvailable) {
@@ -57,18 +91,24 @@ const Index = () => {
             <TimePicker selectedTime={selectedTime} setSelectedTime={setSelectedTime} />
           </div>
           
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {courts.map((court) => (
-              <CourtCard
-                key={court.id}
-                id={court.id}
-                name={court.name}
-                time={court.time}
-                isAvailable={court.isAvailable}
-                onClick={() => handleCourtClick(court)}
-              />
-            ))}
-          </div>
+          {isLoading ? (
+            <div className="flex justify-center items-center py-12">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-court-orange"></div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {courts.map((court) => (
+                <CourtCard
+                  key={court.courtNumber}
+                  id={court.courtNumber}
+                  name={court.name}
+                  time={court.time}
+                  isAvailable={court.isAvailable}
+                  onClick={() => handleCourtClick(court)}
+                />
+              ))}
+            </div>
+          )}
         </div>
       </main>
       
@@ -78,6 +118,8 @@ const Index = () => {
           onOpenChange={setDialogOpen}
           courtName={selectedCourt.name}
           courtTime={selectedCourt.time}
+          courtNumber={selectedCourt.courtNumber}
+          bookingDate={selectedDate ? format(selectedDate, "yyyy-MM-dd") : ""}
         />
       )}
       
