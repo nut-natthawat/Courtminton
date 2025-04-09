@@ -2,6 +2,7 @@ package utils
 
 import (
 	"errors"
+	"fmt"
 	"time"
 
 	"courtopia-reserve/backend/internal/models"
@@ -38,11 +39,17 @@ func GenerateToken(user *models.User, secret string, expiryHours int) (string, e
 
 // ValidateToken validates the JWT token
 func ValidateToken(tokenString string, secret string) (*Claims, error) {
-	claims := &Claims{}
-
-	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
-		return []byte(secret), nil
-	})
+	token, err := jwt.ParseWithClaims(
+		tokenString,
+		&Claims{},
+		func(token *jwt.Token) (interface{}, error) {
+			// ตรวจสอบ algorithm ที่ใช้
+			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+			}
+			return []byte(secret), nil
+		},
+	)
 
 	if err != nil {
 		return nil, err
@@ -50,6 +57,11 @@ func ValidateToken(tokenString string, secret string) (*Claims, error) {
 
 	if !token.Valid {
 		return nil, errors.New("invalid token")
+	}
+
+	claims, ok := token.Claims.(*Claims)
+	if !ok {
+		return nil, errors.New("invalid claims")
 	}
 
 	return claims, nil

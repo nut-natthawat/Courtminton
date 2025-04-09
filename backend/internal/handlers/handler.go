@@ -1,11 +1,14 @@
 package handlers
 
 import (
-	"github.com/gorilla/mux"
+	"net/http"
+	"strings"
+
+	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/mongo"
 
-	"courtopia-reserve/backend/internal/middleware"
 	"courtopia-reserve/backend/internal/repository"
+	"courtopia-reserve/backend/pkg/utils"
 )
 
 // Handler holds the database client and other dependencies
@@ -34,31 +37,95 @@ func NewHandler(
 	}
 }
 
+// AuthMiddleware returns a middleware to verify JWT tokens
+func (h *Handler) AuthMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// ดึง token จาก header
+		authHeader := c.GetHeader("Authorization")
+		if authHeader == "" {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization header is required"})
+			c.Abort()
+			return
+		}
+
+		// ตรวจสอบรูปแบบ Bearer token
+		bearerToken := strings.Split(authHeader, " ")
+		if len(bearerToken) != 2 || strings.ToLower(bearerToken[0]) != "bearer" {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid authorization format"})
+			c.Abort()
+			return
+		}
+
+		// ตรวจสอบความถูกต้องของ token
+		claims, err := utils.ValidateToken(bearerToken[1], h.jwtSecret)
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid or expired token"})
+			c.Abort()
+			return
+		}
+
+		// เพิ่มข้อมูล user เข้าไปใน context
+		c.Set("user", claims)
+		c.Next()
+	}
+}
+
+// AdminMiddleware returns middleware to check admin privileges
+func (h *Handler) AdminMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// ดึงข้อมูล user จาก context
+		claims, exists := c.Get("user")
+		if !exists {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+			c.Abort()
+			return
+		}
+
+		// ตรวจสอบว่าเป็น admin หรือไม่
+		if claims.(*utils.Claims).Role != "admin" {
+			c.JSON(http.StatusForbidden, gin.H{"error": "Admin access required"})
+			c.Abort()
+			return
+		}
+
+		c.Next()
+	}
+}
+
 // RegisterRoutes registers all API routes
-func (h *Handler) RegisterRoutes(r *mux.Router) {
+func (h *Handler) RegisterRoutes(r *gin.Engine) {
+	api := r.Group("/api")
+
 	// Public routes
-	authRoutes := r.PathPrefix("/auth").Subrouter()
-	authRoutes.HandleFunc("/register", h.Register).Methods("POST", "OPTIONS")
-	authRoutes.HandleFunc("/login", h.Login).Methods("POST", "OPTIONS")
+	auth := api.Group("/auth")
+	{
+		auth.POST("/register", h.Register)
+		auth.POST("/login", h.Login)
+	}
 
 	// Public court routes
-	courtRoutes := r.PathPrefix("/courts").Subrouter()
-	courtRoutes.HandleFunc("", h.GetCourts).Methods("GET", "OPTIONS")
-	courtRoutes.HandleFunc("/available", h.GetAvailableCourts).Methods("GET", "OPTIONS")
-	courtRoutes.HandleFunc("/{id}", h.GetCourt).Methods("GET", "OPTIONS")
+	courts := api.Group("/courts")
+	{
+		courts.GET("", h.GetCourts)
+		courts.GET("/available", h.GetAvailableCourts)
+		courts.GET("/:id", h.GetCourt)
+	}
 
-	// Protected routes
-	bookingRoutes := r.PathPrefix("/bookings").Subrouter()
-	bookingRoutes.Use(middleware.AuthMiddleware(h.jwtSecret))
-	bookingRoutes.HandleFunc("", h.CreateBooking).Methods("POST", "OPTIONS")
-	bookingRoutes.HandleFunc("", h.GetUserBookings).Methods("GET", "OPTIONS")
-	bookingRoutes.HandleFunc("/check", h.CheckAvailability).Methods("POST", "OPTIONS")
-	bookingRoutes.HandleFunc("/{id}", h.CancelBooking).Methods("DELETE", "OPTIONS")
+	// Protected routes requiring authentication
+	bookings := api.Group("/bookings")
+	bookings.Use(h.AuthMiddleware())
+	{
+		bookings.POST("", h.CreateBooking)
+		bookings.GET("", h.GetUserBookings)
+		bookings.POST("/check", h.CheckAvailability)
+		bookings.DELETE("/:id", h.CancelBooking)
+	}
 
 	// Admin routes
-	adminRoutes := r.PathPrefix("/admin").Subrouter()
-	adminRoutes.Use(middleware.AuthMiddleware(h.jwtSecret))
-	adminRoutes.Use(middleware.AdminMiddleware)
-	adminRoutes.HandleFunc("/courts/{id}/status", h.UpdateCourtStatus).Methods("PATCH", "OPTIONS")
-	adminRoutes.HandleFunc("/bookings", h.GetAllBookings).Methods("GET", "OPTIONS")
+	admin := api.Group("/admin")
+	admin.Use(h.AuthMiddleware(), h.AdminMiddleware())
+	{
+		admin.PATCH("/courts/:id/status", h.UpdateCourtStatus)
+		admin.GET("/bookings", h.GetAllBookings)
+	}
 }

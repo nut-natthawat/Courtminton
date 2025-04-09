@@ -1,211 +1,157 @@
 package handlers
 
 import (
-	"encoding/json"
 	"net/http"
 	"time"
 
-	"github.com/gorilla/mux"
+	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 
 	"courtopia-reserve/backend/internal/models"
 )
 
-// GetCourts returns all courts
-func (h *Handler) GetCourts(w http.ResponseWriter, r *http.Request) {
-	// Get courts from database
-	courts, err := h.courtRepo.FindAll(r.Context())
+// GetCourts ดึงข้อมูลคอร์ททั้งหมด
+func (h *Handler) GetCourts(c *gin.Context) {
+	// ดึงข้อมูลคอร์ททั้งหมดจาก repository
+	courts, err := h.courtRepo.FindAll(c.Request.Context())
 	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to fetch courts"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch courts"})
 		return
 	}
 
-	// Return courts
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(courts)
+	// ส่งข้อมูลคอร์ททั้งหมดกลับไป
+	c.JSON(http.StatusOK, courts)
 }
 
-// GetCourt returns details of a specific court
-func (h *Handler) GetCourt(w http.ResponseWriter, r *http.Request) {
-	// Get court ID from URL params
-	vars := mux.Vars(r)
-	courtID, err := primitive.ObjectIDFromHex(vars["id"])
+// GetCourt ดึงข้อมูลคอร์ทด้วย ID
+func (h *Handler) GetCourt(c *gin.Context) {
+	// ดึง ID จาก URL parameters
+	idStr := c.Param("id")
+	id, err := primitive.ObjectIDFromHex(idStr)
 	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid court ID"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid court ID"})
 		return
 	}
 
-	// Find court by ID
-	court, err := h.courtRepo.FindByID(r.Context(), courtID)
+	// ดึงข้อมูลคอร์ทจาก repository
+	court, err := h.courtRepo.FindByID(c.Request.Context(), id)
 	if err != nil {
-		w.WriteHeader(http.StatusNotFound)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Court not found"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "Court not found"})
 		return
 	}
 
-	// Return court details
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(court)
+	// ส่งข้อมูลคอร์ทกลับไป
+	c.JSON(http.StatusOK, court)
 }
 
-// GetAvailableCourts returns courts available for booking
-func (h *Handler) GetAvailableCourts(w http.ResponseWriter, r *http.Request) {
-	// Parse query parameters
-	queryParams := r.URL.Query()
-	bookingDate := queryParams.Get("date")
-	startTimeStr := queryParams.Get("startTime")
-	endTimeStr := queryParams.Get("endTime")
+// GetAvailableCourts ดึงข้อมูลคอร์ทที่ว่างในช่วงเวลาที่กำหนด
+func (h *Handler) GetAvailableCourts(c *gin.Context) {
+	// รับ parameters จาก query string
+	dateStr := c.Query("date")
+	startTimeStr := c.Query("startTime")
+	endTimeStr := c.Query("endTime")
 
-	// Validate required parameters
-	if bookingDate == "" || startTimeStr == "" || endTimeStr == "" {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Date, start time, and end time are required"})
+	// ตรวจสอบว่ามีข้อมูลครบหรือไม่
+	if dateStr == "" || startTimeStr == "" || endTimeStr == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Date, start time and end time are required"})
 		return
 	}
 
-	// Parse date and time
-	date, err := time.Parse("2006-01-02", bookingDate)
+	// แปลงวันที่และเวลาให้อยู่ในรูปแบบที่ถูกต้อง
+	bookingDate, err := time.Parse("2006-01-02", dateStr)
 	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid date format. Use YYYY-MM-DD"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid date format, use YYYY-MM-DD"})
 		return
 	}
 
-	// Create full datetime strings by combining date and time
-	startDateTimeStr := bookingDate + "T" + startTimeStr + ":00Z"
-	endDateTimeStr := bookingDate + "T" + endTimeStr + ":00Z"
-
-	// Parse datetime strings
-	startTime, err := time.Parse(time.RFC3339, startDateTimeStr)
+	// สร้างเวลาเริ่มต้นและสิ้นสุดโดยรวมกับวันที่
+	layout := "15:04"
+	startTimeParsed, err := time.Parse(layout, startTimeStr)
 	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid start time format. Use HH:MM"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid start time format, use HH:MM"})
 		return
 	}
 
-	endTime, err := time.Parse(time.RFC3339, endDateTimeStr)
+	endTimeParsed, err := time.Parse(layout, endTimeStr)
 	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid end time format. Use HH:MM"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid end time format, use HH:MM"})
 		return
 	}
 
-	// Check if booking duration is valid (max 2 hours)
-	if endTime.Sub(startTime) > 2*time.Hour {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Booking duration cannot exceed 2 hours"})
-		return
-	}
+	// สร้าง datetime objects สำหรับช่วงเวลาที่ต้องการจอง
+	startTime := time.Date(
+		bookingDate.Year(),
+		bookingDate.Month(),
+		bookingDate.Day(),
+		startTimeParsed.Hour(),
+		startTimeParsed.Minute(),
+		0,
+		0,
+		bookingDate.Location(),
+	)
 
-	// Get available courts
-	availableCourts, err := h.bookingRepo.GetAvailableCourts(r.Context(), date, startTime, endTime, h.courtRepo)
+	endTime := time.Date(
+		bookingDate.Year(),
+		bookingDate.Month(),
+		bookingDate.Day(),
+		endTimeParsed.Hour(),
+		endTimeParsed.Minute(),
+		0,
+		0,
+		bookingDate.Location(),
+	)
+
+	// ตรวจสอบคอร์ทที่ว่าง
+	availabilities, err := h.bookingRepo.GetAvailableCourts(
+		c.Request.Context(),
+		bookingDate,
+		startTime,
+		endTime,
+		h.courtRepo,
+	)
 	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to check court availability"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check court availability"})
 		return
 	}
 
-	// Create response
+	// สร้างข้อมูล response
 	response := models.AvailabilityResponse{
-		BookingDate: bookingDate,
+		BookingDate: dateStr,
 		StartTime:   startTimeStr,
 		EndTime:     endTimeStr,
-		Courts:      availableCourts,
+		Courts:      availabilities,
 	}
 
-	// Return response
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(response)
+	// ส่งข้อมูลกลับ
+	c.JSON(http.StatusOK, response)
 }
 
-// CheckAvailability checks if a specific court is available
-func (h *Handler) CheckAvailability(w http.ResponseWriter, r *http.Request) {
-	// Decode request body
-	var req models.AvailabilityRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid request format"})
-		return
-	}
-
-	// Parse date and time
-	date, err := time.Parse("2006-01-02", req.BookingDate)
+// UpdateCourtStatus อัปเดตสถานะคอร์ท (สำหรับ admin)
+func (h *Handler) UpdateCourtStatus(c *gin.Context) {
+	// ดึงค่า ID จาก URL
+	idStr := c.Param("id")
+	id, err := primitive.ObjectIDFromHex(idStr)
 	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid date format. Use YYYY-MM-DD"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid court ID"})
 		return
 	}
 
-	// Create full datetime strings by combining date and time
-	startDateTimeStr := req.BookingDate + "T" + req.StartTime + ":00Z"
-	endDateTimeStr := req.BookingDate + "T" + req.EndTime + ":00Z"
-
-	// Parse datetime strings
-	startTime, err := time.Parse(time.RFC3339, startDateTimeStr)
-	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid start time format. Use HH:MM"})
-		return
-	}
-
-	endTime, err := time.Parse(time.RFC3339, endDateTimeStr)
-	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid end time format. Use HH:MM"})
-		return
-	}
-
-	// Check if booking duration is valid (max 2 hours)
-	if endTime.Sub(startTime) > 2*time.Hour {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Booking duration cannot exceed 2 hours"})
-		return
-	}
-
-	// Check court availability
-	isAvailable, err := h.bookingRepo.IsCourtAvailable(r.Context(), req.CourtNumber, date, startTime, endTime)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to check court availability"})
-		return
-	}
-
-	// Return availability status
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]bool{"isAvailable": isAvailable})
-}
-
-// UpdateCourtStatus updates the active status of a court (admin only)
-func (h *Handler) UpdateCourtStatus(w http.ResponseWriter, r *http.Request) {
-	// Get court ID from URL params
-	vars := mux.Vars(r)
-	courtID, err := primitive.ObjectIDFromHex(vars["id"])
-	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid court ID"})
-		return
-	}
-
-	// Parse request body
+	// รับข้อมูลจาก request body
 	var req struct {
 		IsActive bool `json:"isActive"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid request format"})
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
 		return
 	}
 
-	// Update court status
-	if err := h.courtRepo.UpdateStatus(r.Context(), courtID, req.IsActive); err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to update court status"})
+	// อัปเดตสถานะคอร์ท
+	if err := h.courtRepo.UpdateStatus(c.Request.Context(), id, req.IsActive); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update court status"})
 		return
 	}
 
-	// Return success response
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{"message": "Court status updated successfully"})
+	// ส่ง response กลับไป
+	c.JSON(http.StatusOK, gin.H{"message": "Court status updated successfully"})
 }
