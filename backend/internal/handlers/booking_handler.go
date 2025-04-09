@@ -1,125 +1,135 @@
 package handlers
 
 import (
-	"encoding/json"
 	"net/http"
 	"time"
 
-	"github.com/gorilla/mux"
+	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 
 	"courtopia-reserve/backend/internal/models"
 	"courtopia-reserve/backend/pkg/utils"
 )
 
-// CreateBooking handles creating a new booking
-func (h *Handler) CreateBooking(w http.ResponseWriter, r *http.Request) {
-	// Get user from context (set by AuthMiddleware)
-	claims, ok := r.Context().Value("user").(*utils.Claims)
-	if !ok {
-		w.WriteHeader(http.StatusUnauthorized)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Unauthorized"})
+// CreateBooking จัดการการสร้างการจองใหม่
+func (h *Handler) CreateBooking(c *gin.Context) {
+	// ดึงข้อมูล user จาก context
+	claims, exists := c.Get("user")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+	userClaims := claims.(*utils.Claims)
+
+	// แปลง UserID จาก string เป็น ObjectID
+	userID, err := primitive.ObjectIDFromHex(userClaims.Subject)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user ID"})
 		return
 	}
 
-	// Parse request body
+	// อ่านข้อมูลจาก request body
 	var req models.BookingRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid request format"})
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
 		return
 	}
 
-	// Parse date and time
+	// แปลงวันที่และเวลาให้อยู่ในรูปแบบที่ถูกต้อง
 	bookingDate, err := time.Parse("2006-01-02", req.BookingDate)
 	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid date format. Use YYYY-MM-DD"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid date format, use YYYY-MM-DD"})
 		return
 	}
 
-	// Create full datetime strings by combining date and time
-	startDateTimeStr := req.BookingDate + "T" + req.StartTime + ":00Z"
-	endDateTimeStr := req.BookingDate + "T" + req.EndTime + ":00Z"
-
-	// Parse datetime strings
-	startTime, err := time.Parse(time.RFC3339, startDateTimeStr)
+	// รูปแบบเวลา
+	layout := "15:04"
+	startTimeParsed, err := time.Parse(layout, req.StartTime)
 	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid start time format. Use HH:MM"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid start time format, use HH:MM"})
 		return
 	}
 
-	endTime, err := time.Parse(time.RFC3339, endDateTimeStr)
+	endTimeParsed, err := time.Parse(layout, req.EndTime)
 	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid end time format. Use HH:MM"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid end time format, use HH:MM"})
 		return
 	}
 
-	// Check if booking is in the past
-	if startTime.Before(time.Now()) {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Cannot book in the past"})
-		return
-	}
-
-	// Check if booking duration is valid (max 2 hours)
-	if endTime.Sub(startTime) > 2*time.Hour {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Booking duration cannot exceed 2 hours"})
-		return
-	}
-
-	// Get court by number
-	court, err := h.courtRepo.FindByCourtNumber(r.Context(), req.CourtNumber)
-	if err != nil {
-		w.WriteHeader(http.StatusNotFound)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Court not found"})
-		return
-	}
-
-	// Check if court is active
-	if !court.IsActive {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Court is not available"})
-		return
-	}
-
-	// Check if court is available at the specified time
-	isAvailable, err := h.bookingRepo.IsCourtAvailable(
-		r.Context(),
-		req.CourtNumber,
-		bookingDate,
-		startTime,
-		endTime,
+	// สร้าง datetime objects สำหรับช่วงเวลาที่ต้องการจอง
+	startTime := time.Date(
+		bookingDate.Year(),
+		bookingDate.Month(),
+		bookingDate.Day(),
+		startTimeParsed.Hour(),
+		startTimeParsed.Minute(),
+		0,
+		0,
+		bookingDate.Location(),
 	)
+
+	endTime := time.Date(
+		bookingDate.Year(),
+		bookingDate.Month(),
+		bookingDate.Day(),
+		endTimeParsed.Hour(),
+		endTimeParsed.Minute(),
+		0,
+		0,
+		bookingDate.Location(),
+	)
+
+	// ตรวจสอบว่าเวลาถูกต้องหรือไม่
+	now := time.Now()
+	if startTime.Before(now) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Booking time must be in the future"})
+		return
+	}
+
+	if endTime.Before(startTime) || endTime.Equal(startTime) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "End time must be after start time"})
+		return
+	}
+
+	// กำหนดให้จองได้ไม่เกิน 2 ชั่วโมง
+	maxDuration := 2 * time.Hour
+	if endTime.Sub(startTime) > maxDuration {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Booking duration cannot exceed 2 hours"})
+		return
+	}
+
+	// ตรวจสอบว่าคอร์ทมีอยู่จริงหรือไม่
+	court, err := h.courtRepo.FindByCourtNumber(c.Request.Context(), req.CourtNumber)
 	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to check court availability"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "Court not found"})
+		return
+	}
+
+	// ตรวจสอบว่าคอร์ทใช้งานได้หรือไม่
+	if !court.IsActive {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Court is not available for booking"})
+		return
+	}
+
+	// ตรวจสอบว่าคอร์ทว่างในช่วงเวลาที่ต้องการหรือไม่
+	isAvailable, err := h.bookingRepo.IsCourtAvailable(c.Request.Context(), req.CourtNumber, bookingDate, startTime, endTime)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check court availability"})
 		return
 	}
 
 	if !isAvailable {
-		w.WriteHeader(http.StatusConflict)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Court is not available at the specified time"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Court is not available for the selected time"})
 		return
 	}
 
-	// Get user ID from token
-	userID, err := primitive.ObjectIDFromHex(claims.Subject)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid user ID"})
-		return
-	}
-
-	// Create new booking
+	// สร้างข้อมูลการจอง
 	booking := &models.Booking{
+		ID:          primitive.NewObjectID(),
 		UserID:      userID,
-		StudentID:   claims.StudentID,
+		StudentID:   userClaims.StudentID,
 		CourtID:     court.ID,
-		CourtNumber: court.CourtNumber,
+		CourtNumber: req.CourtNumber,
 		BookingDate: bookingDate,
 		StartTime:   startTime,
 		EndTime:     endTime,
@@ -128,14 +138,13 @@ func (h *Handler) CreateBooking(w http.ResponseWriter, r *http.Request) {
 		UpdatedAt:   time.Now(),
 	}
 
-	// Save booking to database
-	if err := h.bookingRepo.Create(r.Context(), booking); err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to create booking"})
+	// บันทึกการจองลงฐานข้อมูล
+	if err := h.bookingRepo.Create(c.Request.Context(), booking); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create booking"})
 		return
 	}
 
-	// Create response
+	// สร้างข้อมูล response
 	response := models.BookingResponse{
 		ID:          booking.ID.Hex(),
 		CourtNumber: booking.CourtNumber,
@@ -146,44 +155,31 @@ func (h *Handler) CreateBooking(w http.ResponseWriter, r *http.Request) {
 		CreatedAt:   booking.CreatedAt,
 	}
 
-	// Return success response
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(response)
+	// ส่งข้อมูลกลับ
+	c.JSON(http.StatusCreated, response)
 }
 
-// GetUserBookings returns bookings for the authenticated user
-func (h *Handler) GetUserBookings(w http.ResponseWriter, r *http.Request) {
-	// Get user from context (set by AuthMiddleware)
-	claims, ok := r.Context().Value("user").(*utils.Claims)
-	if !ok {
-		w.WriteHeader(http.StatusUnauthorized)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Unauthorized"})
+// GetUserBookings ดึงข้อมูลการจองของผู้ใช้
+func (h *Handler) GetUserBookings(c *gin.Context) {
+	// ดึงข้อมูล user จาก context
+	claims, exists := c.Get("user")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
 		return
 	}
+	userClaims := claims.(*utils.Claims)
 
-	// Get query parameter to fetch only active bookings
-	onlyActive := r.URL.Query().Get("active") == "true"
-
-	var bookings []*models.Booking
-	var err error
-
-	// Get bookings based on the filter
-	if onlyActive {
-		bookings, err = h.bookingRepo.FindActiveBookingsByStudentID(r.Context(), claims.StudentID)
-	} else {
-		bookings, err = h.bookingRepo.FindByStudentID(r.Context(), claims.StudentID)
-	}
-
+	// ดึงข้อมูลการจองของผู้ใช้
+	bookings, err := h.bookingRepo.FindByStudentID(c.Request.Context(), userClaims.StudentID)
 	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to fetch bookings"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch bookings"})
 		return
 	}
 
-	// Convert to response format
-	var responses []models.BookingResponse
+	// แปลงข้อมูลให้อยู่ในรูปแบบที่ต้องการส่งกลับ
+	var response []models.BookingResponse
 	for _, booking := range bookings {
-		responses = append(responses, models.BookingResponse{
+		response = append(response, models.BookingResponse{
 			ID:          booking.ID.Hex(),
 			CourtNumber: booking.CourtNumber,
 			BookingDate: booking.BookingDate.Format("2006-01-02"),
@@ -194,68 +190,71 @@ func (h *Handler) GetUserBookings(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	// Return bookings
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(responses)
+	// ส่งข้อมูลกลับ
+	c.JSON(http.StatusOK, response)
 }
 
-// CancelBooking handles cancellation of a booking
-func (h *Handler) CancelBooking(w http.ResponseWriter, r *http.Request) {
-	// Get user from context (set by AuthMiddleware)
-	claims, ok := r.Context().Value("user").(*utils.Claims)
-	if !ok {
-		w.WriteHeader(http.StatusUnauthorized)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Unauthorized"})
+// CancelBooking ยกเลิกการจอง
+func (h *Handler) CancelBooking(c *gin.Context) {
+	// ดึงข้อมูล user จาก context
+	claims, exists := c.Get("user")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
 		return
 	}
+	userClaims := claims.(*utils.Claims)
 
-	// Get booking ID from URL params
-	vars := mux.Vars(r)
-	bookingID, err := primitive.ObjectIDFromHex(vars["id"])
+	// ดึง ID ที่ต้องการยกเลิกการจองจาก URL
+	idStr := c.Param("id")
+	id, err := primitive.ObjectIDFromHex(idStr)
 	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid booking ID"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid booking ID"})
 		return
 	}
 
-	// Find booking
-	booking, err := h.bookingRepo.FindByID(r.Context(), bookingID)
+	// ดึงข้อมูลการจอง
+	booking, err := h.bookingRepo.FindByID(c.Request.Context(), id)
 	if err != nil {
-		w.WriteHeader(http.StatusNotFound)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Booking not found"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "Booking not found"})
 		return
 	}
 
-	// Check if booking belongs to the user or user is admin
-	if booking.StudentID != claims.StudentID && claims.Role != "admin" {
-		w.WriteHeader(http.StatusForbidden)
-		json.NewEncoder(w).Encode(map[string]string{"error": "You don't have permission to cancel this booking"})
+	// ตรวจสอบสิทธิ์ (ยกเลิกได้เฉพาะเจ้าของหรือ admin)
+	isOwner := booking.StudentID == userClaims.StudentID
+	isAdmin := userClaims.Role == "admin"
+	if !isOwner && !isAdmin {
+		c.JSON(http.StatusForbidden, gin.H{"error": "You do not have permission to cancel this booking"})
 		return
 	}
 
-	// Check if booking is already cancelled
-	if booking.Status != "active" {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Booking is already cancelled"})
+	// ตรวจสอบว่าการจองถูกยกเลิกไปแล้วหรือไม่
+	if booking.Status == "cancelled" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Booking is already cancelled"})
 		return
 	}
 
-	// Cancel booking
-	if err := h.bookingRepo.CancelBooking(r.Context(), bookingID); err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to cancel booking"})
+	// ยกเลิกการจอง
+	if err := h.bookingRepo.CancelBooking(c.Request.Context(), id); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to cancel booking"})
 		return
 	}
 
-	// Return success response
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{"message": "Booking cancelled successfully"})
+	// ส่งข้อมูลกลับ
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Booking cancelled successfully",
+	})
 }
 
-// GetAllBookings returns all bookings (admin only)
-func (h *Handler) GetAllBookings(w http.ResponseWriter, r *http.Request) {
-	// Logic for admin to get all bookings
-	// This is a placeholder - you would implement similar logic to GetUserBookings but without filtering by studentID
-	w.WriteHeader(http.StatusNotImplemented)
-	json.NewEncoder(w).Encode(map[string]string{"message": "Not implemented yet"})
+// GetAllBookings ดึงข้อมูลการจองทั้งหมด (สำหรับ admin)
+func (h *Handler) GetAllBookings(c *gin.Context) {
+	// โค้ดสำหรับดึงข้อมูลการจองทั้งหมด
+	// (คุณสามารถเพิ่มการดึงข้อมูลการจองทั้งหมดได้ตามต้องการ)
+	c.JSON(http.StatusOK, gin.H{"message": "Admin bookings endpoint"})
+}
+
+// CheckAvailability ตรวจสอบว่าคอร์ทว่างหรือไม่
+func (h *Handler) CheckAvailability(c *gin.Context) {
+	// โค้ดสำหรับตรวจสอบว่าคอร์ทว่างหรือไม่
+	// (คุณสามารถเพิ่มการตรวจสอบได้ตามต้องการ)
+	c.JSON(http.StatusOK, gin.H{"message": "Check availability endpoint"})
 }

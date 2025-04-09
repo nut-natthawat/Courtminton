@@ -10,12 +10,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/gin-gonic/gin"
+
 	"courtopia-reserve/backend/internal/config"
 	"courtopia-reserve/backend/internal/database"
 	"courtopia-reserve/backend/internal/handlers"
 	"courtopia-reserve/backend/internal/repository"
-
-	"github.com/gorilla/mux"
 )
 
 func main() {
@@ -42,50 +42,43 @@ func main() {
 	courtRepo := repository.NewCourtRepository(db)
 	bookingRepo := repository.NewBookingRepository(db)
 
-	// สร้าง handler และให้ repositories เป็น dependencies
-	h := handlers.NewHandler(db, userRepo, courtRepo, bookingRepo, cfg.JWTSecret)
-
-	// สร้าง router
-	r := mux.NewRouter()
-
-	// Health check endpoint
-	r.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
-	}).Methods("GET")
-
-	// ลงทะเบียน API routes
-	api := r.PathPrefix("/api").Subrouter()
-	h.RegisterRoutes(api)
-
-	// ตั้งค่า CORS middleware
-	corsMiddleware := func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Access-Control-Allow-Origin", "http://localhost:8080")
-			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-			w.Header().Set("Access-Control-Allow-Credentials", "true")
-
-			// ตอบกลับทันทีสำหรับ OPTIONS request (preflight)
-			if r.Method == "OPTIONS" {
-				w.WriteHeader(http.StatusOK)
-				return
-			}
-
-			next.ServeHTTP(w, r)
-		})
+	// Set Gin mode based on environment
+	if cfg.Environment == "production" {
+		gin.SetMode(gin.ReleaseMode)
 	}
 
-	// เพิ่ม middleware
-	r.Use(corsMiddleware)
+	// สร้าง Gin engine
+	r := gin.Default()
+
+	// ตั้งค่า CORS middleware
+	r.Use(func(c *gin.Context) {
+		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
+
+		// Handle OPTIONS method for CORS preflight
+		if c.Request.Method == "OPTIONS" {
+			c.AbortWithStatus(http.StatusOK)
+			return
+		}
+
+		c.Next()
+	})
+
+	// Health check endpoint
+	r.GET("/health", func(c *gin.Context) {
+		c.String(http.StatusOK, "OK")
+	})
+
+	// สร้าง handler และลงทะเบียน routes
+	h := handlers.NewHandler(db, userRepo, courtRepo, bookingRepo, cfg.JWTSecret)
+	h.RegisterRoutes(r)
 
 	// เริ่มต้น server
 	srv := &http.Server{
-		Addr:         fmt.Sprintf(":%d", cfg.Port),
-		WriteTimeout: 15 * time.Second,
-		ReadTimeout:  15 * time.Second,
-		IdleTimeout:  60 * time.Second,
-		Handler:      r,
+		Addr:    fmt.Sprintf(":%d", cfg.Port),
+		Handler: r,
 	}
 
 	// รันใน goroutine ที่แยกกันเพื่อไม่ให้บล็อก
@@ -97,18 +90,19 @@ func main() {
 	}()
 
 	// รอสัญญาณปิดแอพ
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
 
-	// บล็อกจนกว่าจะได้รับสัญญาณ
-	<-c
+	log.Println("Shutting down server...")
 
 	// สร้าง timeout context สำหรับการปิด
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	// ปิด server
-	log.Println("Shutting down server...")
-	srv.Shutdown(ctx)
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Fatalf("Server shutdown error: %v", err)
+	}
 	log.Println("Server stopped")
 }
