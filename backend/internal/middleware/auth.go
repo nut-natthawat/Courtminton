@@ -1,68 +1,65 @@
 package middleware
 
 import (
-	"context"
-	"encoding/json"
 	"net/http"
 	"strings"
+
+	"github.com/gin-gonic/gin"
 
 	"courtopia-reserve/backend/pkg/utils"
 )
 
 // AuthMiddleware เป็น middleware สำหรับตรวจสอบ authentication
-func AuthMiddleware(jwtSecret string) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// ดึง token จาก header
-			authHeader := r.Header.Get("Authorization")
-			if authHeader == "" {
-				w.WriteHeader(http.StatusUnauthorized)
-				json.NewEncoder(w).Encode(map[string]string{"error": "Authorization header is required"})
-				return
-			}
+func AuthMiddleware(jwtSecret string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// ดึง token จาก header
+		authHeader := c.GetHeader("Authorization")
+		if authHeader == "" {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization header is required"})
+			c.Abort()
+			return
+		}
 
-			// ตรวจสอบรูปแบบ Bearer token
-			bearerToken := strings.Split(authHeader, " ")
-			if len(bearerToken) != 2 || strings.ToLower(bearerToken[0]) != "bearer" {
-				w.WriteHeader(http.StatusUnauthorized)
-				json.NewEncoder(w).Encode(map[string]string{"error": "Invalid authorization format"})
-				return
-			}
+		// ตรวจสอบรูปแบบ Bearer token
+		bearerToken := strings.Split(authHeader, " ")
+		if len(bearerToken) != 2 || strings.ToLower(bearerToken[0]) != "bearer" {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid authorization format"})
+			c.Abort()
+			return
+		}
 
-			// ตรวจสอบความถูกต้องของ token
-			claims, err := utils.ValidateToken(bearerToken[1], jwtSecret)
-			if err != nil {
-				w.WriteHeader(http.StatusUnauthorized)
-				json.NewEncoder(w).Encode(map[string]string{"error": "Invalid or expired token"})
-				return
-			}
+		// ตรวจสอบความถูกต้องของ token
+		claims, err := utils.ValidateToken(bearerToken[1], jwtSecret)
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid or expired token"})
+			c.Abort()
+			return
+		}
 
-			// เพิ่มข้อมูล user เข้าไปใน context
-			ctx := context.WithValue(r.Context(), "user", claims)
-			next.ServeHTTP(w, r.WithContext(ctx))
-		})
+		// เพิ่มข้อมูล user เข้าไปใน context
+		c.Set("user", claims)
+		c.Next()
 	}
 }
 
 // AdminMiddleware เป็น middleware สำหรับตรวจสอบว่าเป็น admin หรือไม่
-func AdminMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func AdminMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
 		// ดึงข้อมูล user จาก context
-		claims, ok := r.Context().Value("user").(*utils.Claims)
-		if !ok {
-			w.WriteHeader(http.StatusUnauthorized)
-			json.NewEncoder(w).Encode(map[string]string{"error": "Unauthorized"})
+		claims, exists := c.Get("user")
+		if !exists {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+			c.Abort()
 			return
 		}
 
 		// ตรวจสอบว่าเป็น admin หรือไม่
-		if claims.Role != "admin" {
-			w.WriteHeader(http.StatusForbidden)
-			json.NewEncoder(w).Encode(map[string]string{"error": "Admin access required"})
+		if claims.(*utils.Claims).Role != "admin" {
+			c.JSON(http.StatusForbidden, gin.H{"error": "Admin access required"})
+			c.Abort()
 			return
 		}
 
-		// ดำเนินการต่อหากเป็น admin
-		next.ServeHTTP(w, r)
-	})
+		c.Next()
+	}
 }
