@@ -83,7 +83,7 @@ func (h *Handler) Login(c *gin.Context) {
 	}
 
 	// สร้าง JWT token
-	token, err := utils.GenerateToken(user, h.jwtSecret, 24)
+	token, err := utils.GenerateToken(user, h.jwtSecret, 0.0333)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
 		return
