@@ -76,9 +76,9 @@ const Login = () => {
                 <CardHeader className="text-center">
                     <div className="flex justify-center mb-2">
                         <img
-                            src="/lovable-uploads/da3c37a1-a8c1-4fe0-b7ba-7b4033af8179.png"
+                            src="/lovable-uploads/bad-Photoroom.png"
                             alt="Shuttlecock Logo"
-                            className="w-16 h-16 object-contain"
+                            className="w-25 h-24 object-contain"
                         />
                     </div>
                     <CardTitle className="text-2xl font-bold text-court-orange">เข้าสู่ระบบ</CardTitle>

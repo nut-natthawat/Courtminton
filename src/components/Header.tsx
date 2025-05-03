@@ -19,9 +19,9 @@ const Header = () => {
     <header className="w-full bg-court-orange text-white p-4 flex justify-between items-center">
       <div className="flex items-center gap-2">
         <img
-          src="/lovable-uploads/da3c37a1-a8c1-4fe0-b7ba-7b4033af8179.png"
+          src="/lovable-uploads/bad-Photoroom.png"
           alt="Shuttlecock Logo"
-          className="w-8 h-8 object-contain"
+          className="w-12 h-12 object-contain"
         />
         <h1 className="text-xl font-bold">Courtminton</h1>
       </div>

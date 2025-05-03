@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"log"
 	"net/http"
 	"time"
 
@@ -169,9 +170,19 @@ func (h *Handler) GetUserBookings(c *gin.Context) {
 	}
 	userClaims := claims.(*utils.Claims)
 
+	// อัปเดตสถานะการจองที่สิ้นสุดแล้วให้เป็น completed
+	if err := h.bookingRepo.UpdateCompletedBookings(c.Request.Context()); err != nil {
+		log.Printf("Error updating completed bookings: %v", err)
+		// ไม่ return error เพราะเราไม่ต้องการให้มันส่งผลกระทบต่อการดึงข้อมูล
+	}
+
+	// เพิ่ม logging เพื่อตรวจสอบค่า studentID
+	log.Printf("Fetching bookings for student ID: %s", userClaims.StudentID)
+
 	// ดึงข้อมูลการจองของผู้ใช้
 	bookings, err := h.bookingRepo.FindByStudentID(c.Request.Context(), userClaims.StudentID)
 	if err != nil {
+		log.Printf("Error fetching bookings: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch bookings"})
 		return
 	}
