@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"log"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
@@ -52,23 +53,35 @@ func (r *BookingRepository) FindByStudentID(ctx context.Context, studentID strin
 	var bookings []*models.Booking
 
 	filter := bson.M{"student_id": studentID}
-	opts := options.Find().SetSort(bson.M{"booking_date": -1, "start_time": -1})
+
+	// แก้ไขการกำหนด sort option ให้ถูกต้อง - ใช้ชุดของ sort criteria แทน map
+	opts := options.Find().SetSort(bson.D{
+		{Key: "booking_date", Value: -1},
+		{Key: "start_time", Value: -1},
+	})
 
 	cursor, err := r.collection.Find(ctx, filter, opts)
 	if err != nil {
+		log.Printf("MongoDB Find error: %v", err)
 		return nil, err
 	}
 	defer cursor.Close(ctx)
 
 	err = cursor.All(ctx, &bookings)
 	if err != nil {
+		log.Printf("MongoDB cursor.All error: %v", err)
 		return nil, err
+	}
+
+	// ถ้าไม่มีข้อมูล ให้คืนค่าเป็น array ว่าง ไม่ใช่ error
+	if bookings == nil {
+		return []*models.Booking{}, nil
 	}
 
 	return bookings, nil
 }
 
-// FindActiveBookingsByStudentID finds active bookings by student ID
+// / FindActiveBookingsByStudentID finds active bookings by student ID
 func (r *BookingRepository) FindActiveBookingsByStudentID(ctx context.Context, studentID string) ([]*models.Booking, error) {
 	var bookings []*models.Booking
 
@@ -77,7 +90,12 @@ func (r *BookingRepository) FindActiveBookingsByStudentID(ctx context.Context, s
 		"status":     "active",
 		"end_time":   bson.M{"$gte": time.Now()},
 	}
-	opts := options.Find().SetSort(bson.M{"booking_date": 1, "start_time": 1})
+
+	// แก้ไขส่วนนี้: เปลี่ยนจาก bson.M เป็น bson.D
+	opts := options.Find().SetSort(bson.D{
+		{Key: "booking_date", Value: 1},
+		{Key: "start_time", Value: 1},
+	})
 
 	cursor, err := r.collection.Find(ctx, filter, opts)
 	if err != nil {
@@ -178,4 +196,26 @@ func (r *BookingRepository) GetAvailableCourts(ctx context.Context, bookingDate 
 	}
 
 	return availabilities, nil
+}
+
+// เพิ่มฟังก์ชันใหม่เพื่อตรวจสอบและอัปเดตสถานะการจองที่สิ้นสุดแล้ว
+func (r *BookingRepository) UpdateCompletedBookings(ctx context.Context) error {
+	now := time.Now()
+
+	// ค้นหาการจองที่กำลังใช้งานอยู่แต่เวลาสิ้นสุดผ่านไปแล้ว
+	filter := bson.M{
+		"status":   "active",
+		"end_time": bson.M{"$lt": now},
+	}
+
+	update := bson.M{
+		"$set": bson.M{
+			"status":     "completed",
+			"updated_at": time.Now(),
+		},
+	}
+
+	// อัปเดตหลายรายการพร้อมกัน
+	_, err := r.collection.UpdateMany(ctx, filter, update)
+	return err
 }
