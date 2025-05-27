@@ -24,7 +24,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error loading config: %v", err)
 	}
-
 	// เชื่อมต่อกับฐานข้อมูล
 	client, err := database.ConnectDB(cfg.MongoURI)
 	if err != nil {
@@ -49,6 +48,8 @@ func main() {
 
 	// สร้าง Gin engine
 	r := gin.Default()
+
+	r.Static("/uploads", "./uploads")
 
 	// ตั้งค่า CORS middleware
 	r.Use(func(c *gin.Context) {
@@ -105,4 +106,5 @@ func main() {
 		log.Fatalf("Server shutdown error: %v", err)
 	}
 	log.Println("Server stopped")
+
 }

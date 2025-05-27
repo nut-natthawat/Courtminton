@@ -6,6 +6,7 @@ import Login from '@/pages/Login';
 import Register from '@/pages/Register';
 import Index from '@/pages/Index';
 import Bookings from '@/pages/Bookings';
+import Profile from "@/pages/Profile";
 
 // Protected Route component
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
@@ -24,6 +25,7 @@ const AppRoutes = () => {
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
       <Route path="/" element={<Index />} />
+      <Route path="/profile" element={<Profile />} />
       <Route
         path="/bookings"
         element={

@@ -14,6 +14,7 @@ type User struct {
 	Name      string             `bson:"name" json:"name"`
 	Email     string             `bson:"email,omitempty" json:"email,omitempty"` // optional
 	Role      string             `bson:"role" json:"role"`                       // user, admin
+	ProfilePicture string        `bson:"profile_picture,omitempty" json:"profilePicture,omitempty"` // URL ของรูปโปรไฟล์
 	CreatedAt time.Time          `bson:"created_at" json:"createdAt"`
 	UpdatedAt time.Time          `bson:"updated_at" json:"updatedAt"`
 }

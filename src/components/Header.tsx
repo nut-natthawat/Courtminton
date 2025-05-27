@@ -55,6 +55,9 @@ const Header = () => {
               <DropdownMenuContent align="end">
                 <DropdownMenuLabel>บัญชีของฉัน</DropdownMenuLabel>
                 <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => navigate("/profile")}>
+                  แก้ไขโปรไฟล์
+                </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => navigate("/bookings")}>
                   การจองของฉัน
                 </DropdownMenuItem>

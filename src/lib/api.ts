@@ -136,3 +136,76 @@ export const cancelBooking = async (token: string, bookingId: string) => {
 
     return response.json();
 };
+
+// ดึงข้อมูลโปรไฟล์ผู้ใช้
+export const getProfile = async (token: string) => {
+    const response = await fetch(`${API_URL}/profile`, {
+        method: 'GET',
+        headers: {
+            'Authorization': `Bearer ${token}`,
+        },
+    });
+
+    if (!response.ok) {
+        let errorData;
+        try {
+            errorData = await response.json();
+        } catch (e) {
+            throw new Error(`Failed to fetch profile: ${response.status}`);
+        }
+        throw new Error(errorData.error || 'Failed to fetch profile');
+    }
+
+    return response.json();
+};
+
+// อัปเดตข้อมูลโปรไฟล์ผู้ใช้
+export const updateProfile = async (token: string, name: string, email?: string) => {
+    const response = await fetch(`${API_URL}/profile`, {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({ name, email }),
+    });
+
+    if (!response.ok) {
+        let errorData;
+        try {
+            errorData = await response.json();
+        } catch (e) {
+            throw new Error(`Failed to update profile: ${response.status}`);
+        }
+        throw new Error(errorData.error || 'Failed to update profile');
+    }
+
+    return response.json();
+};
+
+// อัปโหลดรูปโปรไฟล์ผู้ใช้
+export const uploadProfilePicture = async (token: string, file: File) => {
+    const formData = new FormData();
+    formData.append("profilePicture", file); // เปลี่ยนชื่อฟิลด์ให้ตรงกับฝั่งเซิร์ฟเวอร์
+
+    const response = await fetch(`${API_URL}/profile/upload`, {
+        method: "POST",
+        headers: {
+            Authorization: `Bearer ${token}`, // ส่ง token สำหรับการยืนยันตัวตน
+        },
+        body: formData,
+    });
+
+    if (!response.ok) {
+        let errorData;
+        try {
+            errorData = await response.json();
+        } catch (e) {
+            throw new Error(`Failed to upload profile picture: ${response.status}`);
+        }
+        throw new Error(errorData.error || "Failed to upload profile picture");
+    }
+
+    return response.json();
+};
+

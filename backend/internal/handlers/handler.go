@@ -121,6 +121,14 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 		bookings.DELETE("/:id", h.CancelBooking)
 	}
 
+	profile := api.Group("/profile")
+	profile.Use(h.AuthMiddleware())
+	{
+		profile.GET("", h.GetProfile)                   // ดึงข้อมูลโปรไฟล์
+		profile.PUT("", h.UpdateProfile)                // อัปเดตข้อมูลโปรไฟล์
+		profile.POST("/upload", h.UploadProfilePicture) // อัปโหลดรูปโปรไฟล์
+	}
+
 	// Admin routes
 	admin := api.Group("/admin")
 	admin.Use(h.AuthMiddleware(), h.AdminMiddleware())

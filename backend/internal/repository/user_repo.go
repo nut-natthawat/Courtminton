@@ -75,3 +75,9 @@ func (r *UserRepository) Delete(ctx context.Context, id primitive.ObjectID) erro
 	_, err := r.collection.DeleteOne(ctx, filter)
 	return err
 }
+
+func (r *UserRepository) UpdateOne(ctx context.Context, filter interface{}, update interface{}) error {
+	_, err := r.collection.UpdateOne(ctx, filter, update)
+	return err
+}
+
