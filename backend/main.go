@@ -14,7 +14,6 @@ func main() {
 
 	auth := r.Group("/")
 	auth.Use(authMiddleware())
-	auth.GET("/profile", Profile)
 
 	r.Run(":8080")
 

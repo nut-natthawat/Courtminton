@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"time"
+
 	"github.com/dgrijalva/jwt-go"
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson"
@@ -79,9 +80,14 @@ func Login(c *gin.Context) {
 
 	token, _ := createToken(user.Username)
 	c.JSON(http.StatusOK, gin.H{"token": token})
+
 }
 
-func Profile(c *gin.Context) {
-	user, _ := c.Get("user")
-	c.JSON(http.StatusOK, gin.H{"user": user})
-}
+
+
+
+
+
+
+
+
