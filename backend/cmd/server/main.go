@@ -17,6 +17,15 @@ import (
 	"courtopia-reserve/backend/internal/handlers"
 	"courtopia-reserve/backend/internal/repository"
 )
+func startScheduler(bookingRepo *repository.BookingRepository, userRepo *repository.UserRepository) {
+	ticker := time.NewTicker(1 * time.Minute)
+	go func() {
+		for range ticker.C {
+			log.Println("Running email notification scheduler...")
+			handlers.SendMail(bookingRepo, userRepo)
+		}
+	}()
+}
 
 func main() {
 	// โหลดค่า config
@@ -40,6 +49,7 @@ func main() {
 	userRepo := repository.NewUserRepository(db)
 	courtRepo := repository.NewCourtRepository(db)
 	bookingRepo := repository.NewBookingRepository(db)
+	startScheduler(bookingRepo, userRepo)
 
 	// Set Gin mode based on environment
 	if cfg.Environment == "production" {
@@ -75,6 +85,8 @@ func main() {
 	// สร้าง handler และลงทะเบียน routes
 	h := handlers.NewHandler(db, userRepo, courtRepo, bookingRepo, cfg.JWTSecret)
 	h.RegisterRoutes(r)
+	h = handlers.NewHandler(db, userRepo, courtRepo, bookingRepo, cfg.JWTSecret)
+	r.POST("/trigger-email-notifications", h.TriggerEmailNotifications)
 
 	// เริ่มต้น server
 	srv := &http.Server{

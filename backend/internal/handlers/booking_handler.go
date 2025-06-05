@@ -1,14 +1,18 @@
 package handlers
 
 import (
+	"context"
+	"fmt"
 	"log"
 	"net/http"
+	"net/smtp"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 
 	"courtopia-reserve/backend/internal/models"
+	"courtopia-reserve/backend/internal/repository"
 	"courtopia-reserve/backend/pkg/utils"
 )
 
@@ -81,8 +85,7 @@ func (h *Handler) CreateBooking(c *gin.Context) {
 	)
 
 	// ตรวจสอบว่าเวลาถูกต้องหรือไม่
-	now := time.Now()
-	if startTime.Before(now) {
+	if startTime.Before(time.Now()) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Booking time must be in the future"})
 		return
 	}
@@ -126,18 +129,21 @@ func (h *Handler) CreateBooking(c *gin.Context) {
 
 	// สร้างข้อมูลการจอง
 	booking := &models.Booking{
-		ID:          primitive.NewObjectID(),
-		UserID:      userID,
-		StudentID:   userClaims.StudentID,
-		CourtID:     court.ID,
-		CourtNumber: req.CourtNumber,
-		BookingDate: bookingDate,
-		StartTime:   startTime,
-		EndTime:     endTime,
-		Status:      "active",
-		CreatedAt:   time.Now(),
-		UpdatedAt:   time.Now(),
+		ID:               primitive.NewObjectID(),
+		UserID:           userID,
+		StudentID:        userClaims.StudentID,
+		CourtID:          court.ID,
+		CourtNumber:      req.CourtNumber,
+		BookingDate:      bookingDate,
+		StartTime:        startTime,
+		EndTime:          endTime,
+		Status:           "active",
+		NotificationSent: false,
+		CreatedAt:        time.Now(),
+		UpdatedAt:        time.Now(),
+		UserEmail:        userClaims.Email,
 	}
+
 
 	// บันทึกการจองลงฐานข้อมูล
 	if err := h.bookingRepo.Create(c.Request.Context(), booking); err != nil {
@@ -269,3 +275,82 @@ func (h *Handler) CheckAvailability(c *gin.Context) {
 	// (คุณสามารถเพิ่มการตรวจสอบได้ตามต้องการ)
 	c.JSON(http.StatusOK, gin.H{"message": "Check availability endpoint"})
 }
+
+func SendMail(bookingRepo *repository.BookingRepository, userRepo *repository.UserRepository) {
+	log.Println("Starting SendMail function...")
+
+	bookings, err := bookingRepo.FindUpcomingBookings(context.Background(), time.Now().Add(15*time.Minute))
+	if err != nil {
+		log.Printf("Error fetching upcoming bookings: %v", err)
+		return
+	}
+
+	log.Printf("Found %d upcoming bookings", len(bookings))
+
+	// ตั้งค่า SMTP
+	auth := smtp.PlainAuth(
+		"",
+		"natthawat48.noi@gmail.com", // อีเมลผู้ส่ง
+		"mjxn rpse favy jidl",       // App Password
+		"smtp.gmail.com",            // Host ของ SMTP
+	)
+
+	for _, booking := range bookings {
+		log.Printf("Processing booking ID: %s", booking.ID.Hex())
+
+		// ดึงอีเมลของผู้ใช้จาก StudentID
+		user, err := userRepo.FindByStudentID(context.Background(), booking.StudentID)
+		if err != nil {
+			log.Printf("Error fetching user email for StudentID %s: %v", booking.StudentID, err)
+			continue
+		}
+
+		log.Printf("Sending email to: %s", user.Email)
+
+		// สร้างข้อความอีเมล
+		msg := []byte(fmt.Sprintf(
+			"To: %s\r\nSubject: Upcoming Booking Reminder\r\n\r\nDear user,\n\nThis is a reminder for your upcoming booking:\n\nCourt Number: %d\nDate: %s\nTime: %s - %s\n\nThank you for using Courtminton!",
+			user.Email,
+			booking.CourtNumber,
+			booking.BookingDate.Format("2006-01-02"),
+			booking.StartTime.Format("15:04"),
+			booking.EndTime.Format("15:04"),
+		))
+
+		// ส่งอีเมล
+		err = smtp.SendMail(
+			"smtp.gmail.com:587",
+			auth,
+			"natthawat48.noi@gmail.com",
+			[]string{user.Email},
+			msg,
+		)
+
+		if err != nil {
+			log.Printf("Error sending email to %s: %v", user.Email, err)
+			continue
+		}
+
+		log.Printf("Email sent successfully to: %s", user.Email)
+
+		// อัปเดตสถานะการแจ้งเตือนในฐานข้อมูล
+		booking.NotificationSent = true
+		if err := bookingRepo.UpdateBooking(context.Background(), booking); err != nil {
+			log.Printf("Error updating notification status for booking ID %s: %v", booking.ID.Hex(), err)
+		} else {
+			log.Printf("Notification status updated for booking ID: %s", booking.ID.Hex())
+		}
+	}
+
+	log.Println("SendMail function completed.")
+}
+
+func (h *Handler) TriggerEmailNotifications(c *gin.Context) {
+	// เรียกใช้งาน SendMail
+	SendMail(h.bookingRepo, h.userRepo)
+
+	// ส่งข้อความกลับไปยัง client
+	c.JSON(http.StatusOK, gin.H{"message": "Email notifications triggered"})
+}
+
+
